@@ -4,7 +4,7 @@
  #include <avr/power.h>
 #endif
 #define PIN 0
-#define MAX_PIXELS 20
+#define MAX_PIXELS 24
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(MAX_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 //   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
 //   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
@@ -33,6 +33,14 @@ int32_t hires_pos = 0, // 100x actual pos so we can fake floats
 #define friction  90 // (100-89)/100
 #define spring_constant 36 // 36/100 = .36
 
+#define BUTTON_PIN 1
+uint8_t button_state = 0;
+uint8_t prev_button_state = 0xFF;
+uint8_t button_seen_up = 0;
+unsigned long button_state_start_time = 0;
+#define BUTTON_BOUNCE_TIME 80
+
+
 const byte polar_mapped_coords[] ={
 00, 19, 9, 19,  8, 10,  7, 11,  6, 12,
  5, 13,  4, 14, 3, 15,  2, 16,  1, 17
@@ -40,23 +48,41 @@ const byte polar_mapped_coords[] ={
 
 
 void setup() {
-  randomSeed(analogRead(1));
+  randomSeed(analogRead(2));
+    pinMode(BUTTON_PIN, INPUT);
+
   #ifdef __AVR_ATtiny85__ // Trinket, Gemma, etc.
   if(F_CPU == 16000000) clock_prescale_set(clock_div_1);
 #endif
   pixels.begin();
   //pixels.setBrightness(255);
   prevTime = millis();
-  SolidRing(0xFF0000);
+    mode= 0;
+  //SolidRing(0xFF0000);
+  SolidRing(Wheel(random(255)));
 }
 
+
+
+
+
 void loop() {
+  boolean mode_change = GetButtonState();
 
   uint32_t t;
-mode= 99;
+  if (mode_change){
+    mode++;
+  //  SolidRing(Wheel(mode*16));
+SolidRing(Wheel(random(255)));
+
+  }
+
+
+
   switch(mode) {
 
-   case 0: // Random sparks - just one LED on at a time!
+
+   case 99: // Random sparks - just one LED on at a time!
    // ======================================================
     i = random(MAX_PIXELS);
     pixels.setPixelColor(i, color);
@@ -67,7 +93,7 @@ mode= 99;
 
 
 
-   case 1: // Spinny wheels (8 LEDs on at a time)
+   case 100: // Spinny wheels (8 LEDs on at a time)
   // ======================================================
     for(i=0; i<16; i++) {
       uint32_t c = 0; // turn off non-selected pixels
@@ -81,7 +107,7 @@ mode= 99;
 
     break;
 
-case 2: // rotating dot
+case 101: // rotating dot
     //pixels.setPixelColor( pos, 0) ;
      pixels.setPixelColor( polar_mapped_coords[pos], 0) ;
 
@@ -94,7 +120,7 @@ case 2: // rotating dot
 break;
 
 
-      case 3: // sequencer
+      case 102: // sequencer
   // ======================================================
       for(i=0; i<16; i++) {
       uint32_t c = 0; // turn off non-selected pixels
@@ -182,3 +208,70 @@ D: B
 E: A
 F: 9
 */
+
+
+// BUTTON WITH DEBOUNCE
+
+boolean GetButtonState(){
+// no inputes - everything is global
+  boolean retVal = false;
+  unsigned long now = millis();
+
+
+    if (digitalRead(BUTTON_PIN) == HIGH){
+
+      button_state = 1;
+    } else {
+      button_state = 0;
+
+    }
+
+    if(button_state == prev_button_state){
+      if (now - button_state_start_time > BUTTON_BOUNCE_TIME){
+        // button is stable: update
+        if (button_state){ // button pressed
+          if (button_seen_up){
+            // new press - actually do something
+            retVal =  true;
+
+            button_seen_up  = 0;
+          }
+        } else { // but not pressed:
+          button_seen_up =  1;
+        }
+      }
+
+    } else { // button state changed
+      prev_button_state = button_state;
+      button_state_start_time = now;
+
+    }
+
+    return retVal;
+}
+
+// Create a 24 bit color value from R,G,B
+uint32_t Color(byte r, byte g, byte b){
+  uint32_t c;
+  c = r;
+  c <<= 8;
+  c |= g;
+  c <<= 8;
+  c |= b;
+  return c;
+}
+
+//Input a value 0 to 255 to get a color value.
+//The colours are a transition r - g -b - back to r
+uint32_t Wheel(byte WheelPos)
+{
+  if (WheelPos < 85) {
+   return Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  } else if (WheelPos < 170) {
+   WheelPos -= 85;
+   return Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  } else {
+   WheelPos -= 170;
+   return Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+}
