@@ -5,22 +5,29 @@
 #endif
 #define PIN 0
 #define MAX_PIXELS 24
+#define SKULL_CIRCUMFERENCE 20
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(MAX_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 //   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
 //   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
 //   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
 //   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
 
-uint8_t  mode   = 0, // Current animation effect
+uint8_t  skull_color   = 0, // Current skull color
+        animation = 0,
 // "left" is closest to cpu
          leftOff = 7, // Position of spinny eyes
          rightOff = 2,
          pos = 0;
+#define MAX_ANIMATIONS 2
+// ^ zero based
+#define C_LEDS 2
 uint8_t  i; // generic index
 
 uint8_t testpos = 0;
 uint32_t color  = 0xFF0000; // Start red
 uint32_t prevTime;
+uint8_t slow_counter = 0;
+uint8_t slow_factor = 3;
 
 int32_t hires_pos = 0, // 100x actual pos so we can fake floats
   inertia = 0,
@@ -41,9 +48,17 @@ unsigned long button_state_start_time = 0;
 #define BUTTON_BOUNCE_TIME 80
 
 
-const byte polar_mapped_coords[] ={
-00, 19, 9, 19,  8, 10,  7, 11,  6, 12,
- 5, 13,  4, 14, 3, 15,  2, 16,  1, 17
+const byte angle_to_pixel[] ={
+ 0 + C_LEDS, 11 + C_LEDS,
+ 1 + C_LEDS, 12 + C_LEDS,
+ 2 + C_LEDS, 13 + C_LEDS,
+ 3 + C_LEDS, 14 + C_LEDS,
+ 4 + C_LEDS, 15 + C_LEDS,
+ 5 + C_LEDS, 16 + C_LEDS,
+ 6 + C_LEDS, 17 + C_LEDS,
+ 7 + C_LEDS, 18 + C_LEDS,
+ 8 + C_LEDS, 19 + C_LEDS,
+ 9 + C_LEDS, 10 + C_LEDS
 };
 
 
@@ -57,9 +72,9 @@ void setup() {
   pixels.begin();
   //pixels.setBrightness(255);
   prevTime = millis();
-    mode= 0;
+    skull_color=99;
   //SolidRing(0xFF0000);
-  SolidRing(Wheel(random(255)));
+//  SolidRing(Wheel(random(255)));
 }
 
 
@@ -69,17 +84,39 @@ void setup() {
 void loop() {
   boolean mode_change = GetButtonState();
 
-  uint32_t t;
+  uint32_t actual_color;
+
+  // up the mopde if button is pressed:
   if (mode_change){
-    mode++;
-  //  SolidRing(Wheel(mode*16));
-SolidRing(Wheel(random(255)));
+    if (++animation > MAX_ANIMATIONS){
+        animation = 0;
+        skull_color++;
+        if (skull_color>16) {skull_color = 0;}
+      }
+    }
 
-  }
+    actual_color = Wheel(skull_color*16);
+  switch(animation) {
+
+    case 0:
+      SolidRing(actual_color);
+    break;
 
 
 
-  switch(mode) {
+    case 1000: // Spinny wheels (8 LEDs on at a time)
+   // ======================================================
+     for(i=0; i<16; i++) {
+       uint32_t c = 0; // turn off non-selected pixels
+       if(((pos + i) & 7) < 2) c = actual_color; // 4 pixels on...
+       pixels.setPixelColor(  NormalizeRingPos(i+leftOff), c); // First eye
+       pixels.setPixelColor(16 + NormalizeRingPos(16-i+rightOff)  , c); // Second eye (flipped)
+     }
+     pixels.show();
+     pos = pos++ % 16;
+     delay(50);
+
+     break;
 
 
    case 99: // Random sparks - just one LED on at a time!
@@ -93,30 +130,35 @@ SolidRing(Wheel(random(255)));
 
 
 
-   case 100: // Spinny wheels (8 LEDs on at a time)
-  // ======================================================
-    for(i=0; i<16; i++) {
-      uint32_t c = 0; // turn off non-selected pixels
-      if(((pos + i) & 7) < 2) c = color; // 4 pixels on...
-      pixels.setPixelColor(  NormalizeRingPos(i+leftOff), c); // First eye
-      pixels.setPixelColor(16 + NormalizeRingPos(16-i+rightOff)  , c); // Second eye (flipped)
-    }
+case 2:
+  slow_counter++;
+  if (slow_counter > slow_factor){
+    slow_counter = 0;
+    pixels.setPixelColor( angle_to_pixel[pos], 0) ;
+    pixels.setPixelColor( angle_to_pixel[pos+(SKULL_CIRCUMFERENCE/2)], 0) ;
+
+    pos++;
+    if(pos>=SKULL_CIRCUMFERENCE/2){pos=0;}
+    //pixels.setPixelColor( pos, color) ;
+    pixels.setPixelColor( angle_to_pixel[pos], actual_color) ;
+    pixels.setPixelColor( angle_to_pixel[pos+(SKULL_CIRCUMFERENCE/2)], actual_color) ;
     pixels.show();
-    pos = pos++ % 16;
-    delay(50);
 
-    break;
-
-case 101: // rotating dot
+  }
+    delay(20);
+  break;
+case 1: // rotating dot
     //pixels.setPixelColor( pos, 0) ;
-     pixels.setPixelColor( polar_mapped_coords[pos], 0) ;
+    pixels.setPixelColor( angle_to_pixel[pos], 0) ;
+    pixels.setPixelColor( angle_to_pixel[pos+(SKULL_CIRCUMFERENCE/2)], 0) ;
 
-  pos++;
-  if(pos>=MAX_PIXELS){pos=0;}
-  //pixels.setPixelColor( pos, color) ;
-   pixels.setPixelColor( polar_mapped_coords[pos], color) ;
-  pixels.show();
-  delay(20);
+    pos++;
+    if(pos>=SKULL_CIRCUMFERENCE/2){pos=0;}
+    //pixels.setPixelColor( pos, color) ;
+    pixels.setPixelColor( angle_to_pixel[pos], actual_color) ;
+    pixels.setPixelColor( angle_to_pixel[pos+(SKULL_CIRCUMFERENCE/2)], actual_color) ;
+    pixels.show();
+    delay(20);
 break;
 
 
@@ -134,12 +176,13 @@ break;
     pixels.show();
   }
 
-  t = millis();
+
   /*
+    t = millis();
   if((t - prevTime) > 8000) {      // Every 8 seconds... change modes
-    mode++;                        // Next mode
-    if(mode > 3) {                 // End of modes?
-      mode = 0;                    // Start modes over
+    skull_color++;                        // Next mode
+    if(skull_color > 3) {                 // End of modes?
+      skull_color = 0;                    // Start modes over
     NextColor();
     }
     ClearRings();
